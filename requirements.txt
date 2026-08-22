@@ -1,0 +1,7 @@
+transformers 
+datasets 
+yfinance 
+pandas 
+numpy 
+scipy 
+matplotlib 
