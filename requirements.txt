@@ -6,3 +6,4 @@ torch
 yfinance
 plotly
 pandas
+ollama
