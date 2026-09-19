@@ -121,11 +121,15 @@ def fetch_recent_news(company_name, days_back=7):
 
 @st.cache_data(ttl=3600)
 def fetch_recent_prices(ticker, days_back=30):
-    tk = yf.Ticker(ticker, session=_session)
-    data = tk.history(period=f"{days_back}d")
-    if data.empty:
-        st.warning(f"yfinance returned no data for {ticker}")
+    try:
+        data = yf.download(ticker, period=f"{days_back}d", threads=False, progress=False)
+    except Exception as e:
+        st.error(f"yfinance error for {ticker}: {type(e).__name__}: {e}")
         return pd.DataFrame()
+    if data.empty:
+        st.warning(f"yfinance returned empty data for {ticker} (no exception raised)")
+    if isinstance(data.columns, pd.MultiIndex):
+        data.columns = data.columns.get_level_values(0)
     data.reset_index(inplace=True)
     return data
 
