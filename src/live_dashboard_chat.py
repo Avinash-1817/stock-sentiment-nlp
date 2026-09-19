@@ -117,10 +117,11 @@ def fetch_recent_news(company_name, days_back=7):
                      "source": a.get("source", {}).get("name")})
     return pd.DataFrame(rows)
 
-
 @st.cache_data(ttl=3600)
 def fetch_recent_prices(ticker, days_back=30):
-    data = yf.download(ticker, period=f"{days_back}d")
+    data = yf.download(ticker, period=f"{days_back}d", threads=False, progress=False)
+    if data.empty:
+        st.warning(f"yfinance returned no data for {ticker}")
     if isinstance(data.columns, pd.MultiIndex):
         data.columns = data.columns.get_level_values(0)
     data.reset_index(inplace=True)
