@@ -119,6 +119,7 @@ def fetch_recent_news(company_name, days_back=7):
                      "source": a.get("source", {}).get("name")})
     return pd.DataFrame(rows)
 
+
 @st.cache_data(ttl=3600)
 def fetch_recent_prices(ticker, days_back=30):
     try:
@@ -132,6 +133,20 @@ def fetch_recent_prices(ticker, days_back=30):
         data.columns = data.columns.get_level_values(0)
     data.reset_index(inplace=True)
     return data
+
+
+@st.cache_data
+def load_track_record():
+    """Loads the per-ticker backtest track record (see
+    src/per_ticker_track_record.py). Returns {} if the file doesn't exist
+    yet, so the app degrades gracefully rather than crashing."""
+    try:
+        df = pd.read_csv("data/per_ticker_track_record.csv")
+        return df.set_index("ticker").to_dict("index")
+    except FileNotFoundError:
+        return {}
+
+TRACK_RECORD = load_track_record()
 
 
 def generate_narrative_fallback(d):
@@ -389,6 +404,53 @@ def render_verdict(verdict, company_name, key_suffix=""):
             st.write(line)
 
 
+def render_track_record(ticker, company_name):
+    """Shows how often the judge's same-day directional calls have
+    historically aligned with the actual price move, FOR THIS SPECIFIC
+    company - not just the overall 68.3% figure."""
+    if not TRACK_RECORD:
+        st.caption("📊 Track record data not loaded (data/per_ticker_track_record.csv not found or empty).")
+        return
+
+    record = TRACK_RECORD.get(ticker)
+    if record is None:
+        st.caption(f"📊 No track record entry found for {ticker}.")
+        return
+
+    if not record.get("n_calls") or record["n_calls"] == 0:
+        st.caption(
+            f"📊 Track record: no historical calls to show for {company_name} — "
+            f"{record.get('note', 'insufficient historical data')}."
+        )
+        return
+
+    n_calls = int(record["n_calls"])
+    hit_rate = record["hit_rate"]
+    n_aligned = int(record["n_aligned"])
+
+    if hit_rate >= 0.6:
+        st.success(
+            f"📊 **Track record for {company_name}:** in our 2017–2020 backtest, when the "
+            f"same-day signal made a call on this stock, it aligned with the actual move "
+            f"**{hit_rate:.1%}** of the time ({n_aligned}/{n_calls} instances)."
+        )
+    elif hit_rate >= 0.5:
+        st.info(
+            f"📊 **Track record for {company_name}:** historically aligned **{hit_rate:.1%}** "
+            f"of the time ({n_aligned}/{n_calls} instances) — modest, close to a coin flip."
+        )
+    else:
+        st.warning(
+            f"📊 **Track record for {company_name}:** historically aligned only **{hit_rate:.1%}** "
+            f"of the time ({n_aligned}/{n_calls} instances) — treat any call here with extra caution."
+        )
+
+    st.caption(
+        "This reflects same-day alignment only (2017–2020 study) — it is a historical "
+        "track record, not a guarantee of future accuracy."
+    )
+
+
 def render_company_detail(d, key_suffix=""):
     """Renders the full chart/metric view for ONE company's data dict."""
     if d.get("error"):
@@ -403,6 +465,7 @@ def render_company_detail(d, key_suffix=""):
 
     # The tool's judgment (same-day alignment reading, not a forecast)
     render_verdict(d.get("verdict"), d["company"], key_suffix=key_suffix)
+    render_track_record(ticker, d["company"])
 
     with st.spinner("Writing summary..."):
         narrative = generate_narrative(d)
