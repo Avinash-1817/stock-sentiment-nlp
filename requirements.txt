@@ -1,8 +1,8 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
 streamlit
 newsapi-python
 transformers
 torch
 yfinance
 plotly
-ollama
 pandas
