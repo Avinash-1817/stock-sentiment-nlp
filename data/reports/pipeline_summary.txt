@@ -1,0 +1,9 @@
+DATA SOURCING & CLEANING - PIPELINE SUMMARY
+============================================================
+Raw Hugging Face dataset: 26,961 articles
+After ticker keyword filter (unique articles): 12526
+(ticker,article) rows before date scraping: 45789
+Successfully dated: 45083 (98.5%)
+Final usable dataset: 45030 articles, 53 tickers
+Date range: 2012-01-06 to 2020-12-31
+Ticker-days with matched price data: 9241

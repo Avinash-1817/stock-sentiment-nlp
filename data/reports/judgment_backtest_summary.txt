@@ -1,0 +1,49 @@
+========================================================================
+JUDGMENT RULE BACKTEST - data/reports/judgment_backtest_summary.txt
+========================================================================
+Dataset      : 6374 ticker-days, 46 tickers, 2017-06-07 -> 2020-12-31
+Pooled same-day r = 0.2198 (p=1.51e-70) | pooled NEXT-day r = -0.0005 (p=9.71e-01)
+Judge rule   : call = f(sentiment, article count, historical r/p), thresholds in src/judge.py
+
+------------------------------------------------------------------------
+FULL-SAMPLE PRIOR (in-sample reference)
+------------------------------------------------------------------------
+            n  alignment_hit_rate  n_align  mean_same_day_return  forecast_hit_rate  n_forecast  mean_next_day_return  mean_confidence
+call                                                                                                                                  
+BEARISH   336              0.6101      336               -0.0135             0.4673         336                0.0031           0.8793
+BULLISH   369              0.7263      369                0.0212             0.5149         369                0.0011           0.8697
+NEUTRAL  5669                 NaN        0                0.0021                NaN           0                0.0015           0.6818
+
+[SAME-DAY ALIGNMENT]  directional calls (judge): n=705, hit=67.1% (vs 50%: p=0.0000), mean dir. return=+0.0175 [t=11.59, p=0.0000]
+[SAME-DAY ALIGNMENT]  sentiment-only baseline : n=705, hit=67.1% (vs 50%: p=0.0000), mean dir. return=+0.0175 [t=11.59, p=0.0000]
+
+[NEXT-DAY FORECAST]  directional calls (judge): n=705, hit=49.2% (vs 50%: p=0.7065), mean dir. return=-0.0009 [t=-0.66, p=0.5067]
+[NEXT-DAY FORECAST]  sentiment-only baseline : n=705, hit=49.2% (vs 50%: p=0.7065), mean dir. return=-0.0009 [t=-0.66, p=0.5067]
+
+[JUDGE ABSTENTION] days the judge said NEUTRAL on a weak per-company pattern but naive would have called: n=106; naive alignment hit on those days would have been 42.5% (forecast 46.2%).
+
+------------------------------------------------------------------------
+WALK-FORWARD PRIOR (out-of-sample, past data only)
+------------------------------------------------------------------------
+            n  alignment_hit_rate  n_align  mean_same_day_return  forecast_hit_rate  n_forecast  mean_next_day_return  mean_confidence
+call                                                                                                                                  
+BEARISH   305              0.6164      305               -0.0131             0.4656         305                0.0039           0.8597
+BULLISH   311              0.7492      311                0.0222             0.5080         311                0.0007           0.8659
+NEUTRAL  5758                 NaN        0                0.0022                NaN           0                0.0015           0.6076
+
+[SAME-DAY ALIGNMENT]  directional calls (judge): n=616, hit=68.3% (vs 50%: p=0.0000), mean dir. return=+0.0177 [t=11.29, p=0.0000]
+[SAME-DAY ALIGNMENT]  sentiment-only baseline : n=616, hit=68.3% (vs 50%: p=0.0000), mean dir. return=+0.0177 [t=11.29, p=0.0000]
+
+[NEXT-DAY FORECAST]  directional calls (judge): n=616, hit=48.7% (vs 50%: p=0.5456), mean dir. return=-0.0016 [t=-1.09, p=0.2777]
+[NEXT-DAY FORECAST]  sentiment-only baseline : n=616, hit=48.7% (vs 50%: p=0.5456), mean dir. return=-0.0016 [t=-1.09, p=0.2777]
+
+[JUDGE ABSTENTION] days the judge said NEUTRAL on a weak per-company pattern but naive would have called: n=195; naive alignment hit on those days would have been 49.7% (forecast 49.2%).
+
+========================================================================
+READ THIS FIRST
+========================================================================
+A directional call only makes sense if hit rate > 50% and/or mean
+directional return > 0 (judge better than the sentiment-only baseline).
+Expect the SAME-DAY rows to show a real effect (that is what the study
+measured) and the NEXT-DAY rows to be statistically indistinguishable
+from chance - the tool is an alignment reading, NOT a forecast.

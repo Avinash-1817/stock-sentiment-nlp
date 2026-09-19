@@ -221,3 +221,11 @@ data/raw/
 models/*.bin
 models/*.pt
 __pycache__/
+
+models/
+.freebuff/
+*.safetensors
+*.pt
+*.pth
+src/not_neeed_now_py/
+src/live_dashboard_chat_bck.py
