@@ -3,7 +3,7 @@ streamlit
 newsapi-python
 transformers
 torch
-yfinance
+yfinance>=0.2.65
 plotly
 ollama
 pandas
