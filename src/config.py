@@ -46,7 +46,7 @@ def env(key: str, default: str | None = None) -> str | None:
 # ---------------------------------------------------------------------------
 NEWSAPI_KEY = env("NEWSAPI_KEY")
 OLLAMA_MODEL = env("OLLAMA_MODEL", "llama3.2")
-'LOCAL_MODEL_PATH = env("LOCAL_MODEL_PATH") or str(_MODEL_DIR)
+#LOCAL_MODEL_PATH = env("LOCAL_MODEL_PATH") or str(_MODEL_DIR)
 LOCAL_MODEL_PATH = "https://huggingface.co/avinashgakusei/finbert-stock-sentiment"
 
 # Canonical paths used by the analysis scripts (all relative to the repo root,
