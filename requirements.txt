@@ -8,3 +8,4 @@ plotly
 ollama
 pandas
 curl_cffi
+scipy
