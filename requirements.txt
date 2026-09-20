@@ -9,4 +9,7 @@ ollama
 pandas
 curl_cffi
 scipy
+<<<<<<< HEAD
 matplotlib
+=======
+>>>>>>> bfe4bdb871f3aa3f007e1e7e7331f853e48078f1
