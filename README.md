@@ -71,3 +71,4 @@ python src/judge.py                    # self-check demo of the judge
 
 Educational/research project. Sentiment and the judgment call are informational — not investment
 advice and not price forecasts.
+![Tests](https://github.com/Avinash-1817/stock-sentiment-nlp/actions/workflows/tests.yml/badge.svg)
