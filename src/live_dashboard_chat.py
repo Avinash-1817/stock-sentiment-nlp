@@ -29,12 +29,19 @@ import judge
 
 from ticker_resolver_v2 import resolve_ticker, find_companies_in_text, official_name_for_symbol
 
+from query_understanding import understand_query, effective_news_days
+
+# Optional Sieve scrape integration. The panel renders nothing unless
+# SIEVE_API_KEY is configured, so the app is unchanged without a key.
+from sieve_panel import render_sieve_panel
+
 st.set_page_config(page_title="Stock Sentiment Chat", layout="wide")
 _session = cfrequests.Session(impersonate="chrome")
 
 # The NewsAPI key lives in the project .env file (copy .env.example, fill in
 # your own key) - never hardcode secrets in source files.
 NEWSAPI_KEY = config.NEWSAPI_KEY
+NEWSAPI_MAX_DAYS = config.NEWSAPI_MAX_DAYS
 LOCAL_MODEL_PATH = config.LOCAL_MODEL_PATH
 OLLAMA_MODEL = config.OLLAMA_MODEL
 
@@ -108,6 +115,10 @@ def fetch_recent_news(company_name, days_back=7):
     if not NEWSAPI_KEY:
         raise RuntimeError("NEWSAPI_KEY is not set - copy .env.example to .env at the project root and add your key")
     newsapi = NewsApiClient(api_key=NEWSAPI_KEY)
+    # NewsAPI's free plan only serves ~1 month of history; requesting older
+    # articles raises parameterInvalid. Clamp the NEWS window to the plan
+    # limit (price windows elsewhere are NOT clamped).
+    days_back = effective_news_days(days_back)
     from_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
     response = newsapi.get_everything(q=company_name, from_param=from_date,
                                        language="en", sort_by="publishedAt", page_size=30)
@@ -158,7 +169,7 @@ def generate_narrative_fallback(d):
     tone = ("mostly positive" if d['avg_sentiment'] > 0.15
             else "mostly negative" if d['avg_sentiment'] < -0.15
             else "mixed/neutral")
-    days = d.get("days_back", 7)
+    days = d.get("news_days", d.get("days_back", 7))  # articles were fetched over the NEWS window
     window_change = d.get("pct_change_window")
     pct_change = d.get("pct_change")
 
@@ -223,7 +234,7 @@ ordinary investor who is NOT technical - no jargon like "sentiment score", "corr
 what's going on, in 3-4 plain sentences.
 
 Data for {d['company']} ({d['ticker']}):
-- {d['article_count']} news articles in the last {days} days
+- {d['article_count']} news articles in the last {d.get("news_days", days)} days
 - News tone has been: {"mostly positive" if d['avg_sentiment'] > 0.15 else "mostly negative" if d['avg_sentiment'] < -0.15 else "mixed/neutral"}
 - Price change over the last {days} trading days: {f"{window_change:+.2%}" if window_change is not None else "not available"}
 - Most recent single-day move: {f"{d['pct_change']:+.2%}" if d['pct_change'] is not None else "not available"}
@@ -268,6 +279,7 @@ def generate_comparison_narrative(companies_data, model_name=OLLAMA_MODEL):
     summaries = []
     for d in companies_data:
         days = d.get("days_back", 7)
+        news_days = d.get("news_days", days)
         tone = "mostly positive" if d['avg_sentiment'] > 0.15 else "mostly negative" if d['avg_sentiment'] < -0.15 else "mixed"
         window_chg = d.get("pct_change_window")
         summaries.append(
@@ -307,7 +319,7 @@ def render_comparison_table(companies_data):
             days = d.get("days_back", 7)
             rows.append({
                 "Company": d["company"], "Ticker": d["ticker"],
-                f"Articles ({days}d)": d["article_count"],
+                f"Articles (last {d.get('news_days', days)}d)": d["article_count"],
                 "News tone": f"{d['avg_sentiment']:+.3f}",
                 "Latest Close": f"₹{d['latest_close']:,.2f}" if d["latest_close"] else "N/A",
                 f"Change (last {days}d)": f"{d['pct_change_window']:+.2%}" if d.get("pct_change_window") is not None else "N/A",
@@ -330,7 +342,14 @@ def analyze_company(company_query, days_back=7):
     # only for news search, since NewsAPI matches better on short names.
     official_name = official_name_for_symbol(ticker)
 
-    news_df = fetch_recent_news(company_query, days_back)
+    # News window is clamped to the NewsAPI plan limit; the price window
+    # always uses the user's requested number of days.
+    news_days = effective_news_days(days_back)
+    try:
+        news_df = fetch_recent_news(company_query, news_days)
+    except Exception as e:
+        return {"company": official_name, "ticker": ticker, "error": True,
+                "api_error": str(e)}
     if len(news_df) == 0:
         return {"company": official_name, "ticker": ticker, "error": True, "no_news": True}
 
@@ -338,7 +357,7 @@ def analyze_company(company_query, days_back=7):
     news_df["sentiment_score"] = news_df["sentiment"].map(SCORE_MAP)
     avg_sentiment = news_df["sentiment_score"].mean()
 
-    price_df = fetch_recent_prices(ticker, days_back + 20)
+    price_df = fetch_recent_prices(ticker, days_back + 20)  # full requested window
     latest_close, pct_change_1day, pct_change_window = None, None, None
     if len(price_df) >= 2:
         close_col = price_df["Close"]
@@ -378,8 +397,9 @@ def analyze_company(company_query, days_back=7):
         "avg_sentiment": avg_sentiment, "article_count": len(news_df),
         "latest_close": latest_close,
         "pct_change": pct_change_1day,          # most recent single day
-        "pct_change_window": pct_change_window,  # over the same N-day window as the news
+        "pct_change_window": pct_change_window,  # over the full requested window (prices)
         "days_back": days_back,
+        "news_days": news_days,  # window the news actually covered (clamped to API plan)
         "hist_r": hist_r, "hist_sig": hist_sig,
         "verdict": verdict,
     }
@@ -454,7 +474,11 @@ def render_track_record(ticker, company_name):
 def render_company_detail(d, key_suffix=""):
     """Renders the full chart/metric view for ONE company's data dict."""
     if d.get("error"):
-        if d.get("no_news"):
+        if d.get("api_error"):
+            st.error(
+                f"News lookup failed for **{d['company']}**: {d['api_error'][:200]}"
+            )
+        elif d.get("no_news"):
             st.warning(f"No recent news found for **{d['company']}**.")
         else:
             st.error(f"Couldn't identify a known NSE company from '{d['company']}'.")
@@ -486,13 +510,15 @@ def render_company_detail(d, key_suffix=""):
             price_df["Date"] = pd.to_datetime(price_df["Date"])
             fig2 = go.Figure()
             fig2.add_trace(go.Scatter(x=price_df["Date"], y=price_df["Close"], mode='lines'))
-            fig2.update_layout(height=280, margin=dict(t=40, b=20), title=f"{ticker} price, last 30 days")
+            fig2.update_layout(height=280, margin=dict(t=40, b=20),
+                               title=f"{ticker} price, last {d.get('days_back', 30)} days")
             st.plotly_chart(fig2, use_container_width=True, key=f"price_{ticker}_{key_suffix}")
 
     with st.expander("See the numbers behind this summary"):
         days = d.get("days_back", 7)
+        news_days = d.get("news_days", days)
         m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Articles analyzed", d["article_count"])
+        m1.metric("Articles analyzed", f"{d['article_count']} ({news_days}d window)")
         m2.metric("News tone score", f"{d['avg_sentiment']:+.3f}")
         if d["latest_close"]:
             window_chg = d.get("pct_change_window")
@@ -529,18 +555,41 @@ debug_mode = st.checkbox("Show debug info (temporary, for troubleshooting)", val
 
 user_query = st.chat_input("e.g. show me trends for reliance and paytm")
 
+# if user_query:
+#     with st.spinner("Understanding your question..."):
+#         companies = extract_companies(user_query, debug=debug_mode)
+
+#     results = []
+#     if companies:
+#         for company in companies:
+#             with st.spinner(f"Analyzing {company}..."):
+#                 results.append(analyze_company(company))
+
+#     st.session_state.chat_log.append({"query": user_query, "companies": companies, "results": results})
+
 if user_query:
+    # Companies from the last turn, so a follow-up like "show me trends for
+    # last 15 days" (no company named) keeps analysing what the user just saw
+    # instead of hallucinating a random company.
+    prev_companies = None
+    if st.session_state.chat_log:
+        prev_companies = st.session_state.chat_log[-1].get("companies") or None
+
     with st.spinner("Understanding your question..."):
-        companies = extract_companies(user_query, debug=debug_mode)
+        parsed = understand_query(
+            user_query, find_companies_in_text, prev_companies=prev_companies
+        )
+        companies = parsed["companies"]
+        days_back = parsed["days_back"]
 
     results = []
     if companies:
         for company in companies:
             with st.spinner(f"Analyzing {company}..."):
-                results.append(analyze_company(company))
+                results.append(analyze_company(company, days_back=days_back))
 
     st.session_state.chat_log.append({"query": user_query, "companies": companies, "results": results})
-
+    
 # --- Render the FULL session history, oldest to newest ---
 for turn_idx, turn in enumerate(st.session_state.chat_log):
     st.chat_message("user").write(turn["query"])
@@ -573,3 +622,6 @@ if st.session_state.chat_log:
     if st.button("Clear chat history"):
         st.session_state.chat_log = []
         st.rerun()
+
+# Draw the optional Sieve scrape panel (no-op when Sieve isn't configured).
+render_sieve_panel()

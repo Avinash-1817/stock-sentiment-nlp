@@ -30,6 +30,22 @@ plain-English evidence, and a **backtester** (`src/backtest_judgment.py`) verifi
 3. The fine-tuned model is loaded from `models/finbert_finetuned/final_model`
    (override with `LOCAL_MODEL_PATH` in `.env`).
 
+## Optional: Sieve scraping
+
+The chat app can scrape a public page on demand through the [Sieve](https://scrape.usesieve.com)
+API. It is **off unless configured**: with no `SIEVE_API_KEY`, the panel is not drawn and the
+rest of the app behaves exactly as before.
+
+1. Run `python src/sieve_login.py` and approve the code in your own browser. The key is written
+   straight to `.env` as `SIEVE_API_KEY` (never printed, never committed) - or paste a key from
+   Settings -> API keys into `.env` yourself.
+2. Start the chat app; a **Sieve scrape** panel appears in the sidebar. Runs take minutes, so
+   starting a run and checking its status are separate actions, and every run is recorded in
+   `data/sieve_scrapes.json` so an in-flight run survives a page reload.
+
+The key stays server-side (Streamlit never ships it to the browser). The API logic lives in
+`src/sieve_client.py`; the sidebar panel in `src/sieve_panel.py`.
+
 ## The judgment layer (what "making a call" means here)
 
 `judge_call(sentiment, num_articles, hist)` fuses today's news tone with the company's historical

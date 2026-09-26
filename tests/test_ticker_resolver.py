@@ -37,6 +37,14 @@ class ResolveTickerTests(unittest.TestCase):
         self.assertIsNone(ticker)
         self.assertIsNone(matched)
 
+    def test_conversational_fragments_do_not_resolve(self):
+        # Regression: difflib at cutoff 0.55 used to map these onto unrelated
+        # companies ('show me trends' -> MEESHO.NS).
+        for frag in ["show me trends", "last 15 days", "how is it doing"]:
+            ticker, matched = resolve_ticker(frag)
+            self.assertIsNone(ticker, f"{frag!r} should not resolve")
+            self.assertIsNone(matched)
+
 
 class OfficialNameTests(unittest.TestCase):
     def test_official_name_for_vbl(self):

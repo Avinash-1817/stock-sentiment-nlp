@@ -217,6 +217,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 data/raw/
+# Sieve scrape runtime artifacts (run records + downloaded files)
+data/sieve_scrapes.json
+data/sieve_downloads/
 *.csv
 models/*.bin
 models/*.pt

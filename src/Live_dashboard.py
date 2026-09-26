@@ -27,6 +27,7 @@ st.set_page_config(page_title="Live Stock Sentiment", layout="wide")
 # and fill in your own key) - never hardcode secrets in source files.
 # ---------------------------------------------------------------------------
 NEWSAPI_KEY = config.NEWSAPI_KEY
+NEWSAPI_MAX_DAYS = config.NEWSAPI_MAX_DAYS
 LOCAL_MODEL_PATH = config.LOCAL_MODEL_PATH
 
 # Common companies for a dropdown - extend this with any NSE company
@@ -94,6 +95,10 @@ def fetch_recent_news(company_name, days_back=7):
     if not NEWSAPI_KEY:
         raise RuntimeError("NEWSAPI_KEY is not set - copy .env.example to .env at the project root and add your key")
     newsapi = NewsApiClient(api_key=NEWSAPI_KEY)
+    # NewsAPI's free plan only serves ~1 month of history; requesting older
+    # articles raises parameterInvalid. Clamp the NEWS window to the plan limit.
+    from query_understanding import effective_news_days
+    days_back = effective_news_days(days_back)
     from_date = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
     response = newsapi.get_everything(
         q=company_name, from_param=from_date, language="en",
@@ -138,13 +143,18 @@ col_select, col_days = st.columns([3, 1])
 with col_select:
     company_name = st.selectbox("Select a company", list(COMPANY_TICKERS.keys()))
 with col_days:
-    days_back = st.number_input("Days of news to analyze", min_value=1, max_value=30, value=7)
+    days_back = st.number_input("Days of news to analyze", min_value=1,
+                                max_value=NEWSAPI_MAX_DAYS, value=7)
 
 ticker = COMPANY_TICKERS[company_name]
 
 if st.button("Analyze", type="primary"):
-    with st.spinner("Fetching live news and scoring sentiment..."):
-        news_df = fetch_recent_news(company_name, days_back)
+    try:
+        with st.spinner("Fetching live news and scoring sentiment..."):
+            news_df = fetch_recent_news(company_name, days_back)
+    except Exception as e:
+        st.error(f"News lookup failed: {str(e)[:300]}")
+        news_df = []
 
     if len(news_df) == 0:
         st.warning("No recent articles found for this company in the selected window.")

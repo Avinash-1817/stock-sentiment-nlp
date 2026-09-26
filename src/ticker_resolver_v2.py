@@ -51,6 +51,22 @@ except FileNotFoundError:
     _ALL_NAMES = []
 
 
+def _fuzzy_sane(name, official_name):
+    """Sanity check for the last-resort fuzzy match: the fragment must share
+    a whole token (or a close token spelling) with the official company name.
+    Without this, difflib at cutoff 0.55 maps conversational fragments like
+    'show me trends' onto unrelated companies (observed: MEESHO.NS)."""
+    frag_tokens = [t for t in name.split() if t]
+    name_tokens = official_name.split()
+    for ft in frag_tokens:
+        for nt in name_tokens:
+            if ft == nt:
+                return True
+            if len(ft) >= 4 and difflib.SequenceMatcher(None, ft, nt).ratio() >= 0.75:
+                return True
+    return False
+
+
 def resolve_ticker(company_name, cutoff=0.55):
     """
     Resolve a free-text company name to an NSE ticker (e.g. 'RELIANCE.NS').
@@ -77,9 +93,10 @@ def resolve_ticker(company_name, cutoff=0.55):
         if name == first_word or (len(name) >= 4 and name in official_name):
             return f"{symbol}.NS", official_name
 
-    # 4. Fuzzy match as last resort (typos, partial names)
+    # 4. Fuzzy match as last resort (typos, partial names) - but only accept
+    #    matches that are sane (share a real token with the official name)
     matches = difflib.get_close_matches(name, _ALL_NAMES, n=1, cutoff=cutoff)
-    if matches:
+    if matches and _fuzzy_sane(name, matches[0]):
         return f"{_NAME_TO_SYMBOL[matches[0]]}.NS", matches[0]
 
     return None, None

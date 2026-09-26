@@ -45,7 +45,19 @@ def env(key: str, default: str | None = None) -> str | None:
 # Settings
 # ---------------------------------------------------------------------------
 NEWSAPI_KEY = env("NEWSAPI_KEY")
+# NewsAPI's free plan only serves articles from the last ~1 month. Requesting
+# anything older raises parameterInvalid - callers must clamp the NEWS window
+# to this (price history from yfinance is NOT affected).
+NEWSAPI_MAX_DAYS = int(env("NEWSAPI_MAX_DAYS", "29"))
 OLLAMA_MODEL = env("OLLAMA_MODEL", "llama3.2")
+
+# Sieve scrape API (https://scrape.usesieve.com). SIEVE_API_KEY is a
+# server-side-only secret with full account access (no scopes): never send it
+# to a browser/mobile bundle, a log, an error report, or git. When it is unset
+# every Sieve feature is disabled and the rest of the app behaves exactly as
+# before.
+SIEVE_API_KEY = env("SIEVE_API_KEY")
+SIEVE_BASE_URL = env("SIEVE_BASE_URL", "https://scrape.usesieve.com")
 #LOCAL_MODEL_PATH = env("LOCAL_MODEL_PATH") or str(_MODEL_DIR)
 LOCAL_MODEL_PATH = "avinashgakusei/finbert-stock-sentiment"
 
@@ -54,6 +66,23 @@ LOCAL_MODEL_PATH = "avinashgakusei/finbert-stock-sentiment"
 DATA_DIR = _DATA_DIR
 MERGED_SENTIMENT_PRICE = _DATA_DIR / "merged_sentiment_price_v2.csv"
 PER_TICKER_CORRELATIONS = _DATA_DIR / "per_ticker_correlation_results_v2.csv"
+
+
+def sieve_enabled() -> bool:
+    """True when a Sieve API key is configured. Callers use this to keep all
+    Sieve UI/behaviour dormant when the integration is not set up."""
+    return bool(SIEVE_API_KEY)
+
+
+def require_sieve_key() -> str:
+    """Return the Sieve API key or raise with setup instructions."""
+    if not SIEVE_API_KEY:
+        raise RuntimeError(
+            "SIEVE_API_KEY is not set. Run `python src/sieve_login.py` to log in "
+            "with a device code, or add a key from Settings -> API keys to .env "
+            "at the project root (copy .env.example first)."
+        )
+    return SIEVE_API_KEY
 
 
 def require_newsapi_key() -> str:
