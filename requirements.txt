@@ -8,5 +8,6 @@ plotly
 ollama
 pandas
 curl_cffi
+requests
 scipy
 matplotlib
