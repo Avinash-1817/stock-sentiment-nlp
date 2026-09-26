@@ -142,6 +142,34 @@ class UnderstandQueryTests(unittest.TestCase):
         self.assertEqual(out["days_back"], 30)
 
 
+class NoOllamaProdPathTests(unittest.TestCase):
+    """Regression for prod (Streamlit Cloud has no Ollama): the regex path
+    used to return ['hdfc bank', 'bank', 'hdfc'] for 'HDFC Bank last 3 days',
+    rendering a bogus 3-company comparison instead of one company card."""
+
+    def test_hdfc_bank_query_extracts_single_company(self):
+        with _fake_llm(None):
+            out = qu.understand_query(
+                "HDFC Bank last 3 days", find_companies_in_text
+            )
+        self.assertEqual(out["companies"], ["hdfc bank"])
+        self.assertEqual(out["days_back"], 3)
+
+    def test_tcs_query_extracts_single_company(self):
+        with _fake_llm(None):
+            out = qu.understand_query(
+                "how has TCS done in the past 45 days", find_companies_in_text
+            )
+        self.assertEqual(out["companies"], ["tcs"])
+
+    def test_two_named_companies_both_kept(self):
+        with _fake_llm(None):
+            out = qu.understand_query(
+                "compare paytm and reliance", find_companies_in_text
+            )
+        self.assertEqual(len(out["companies"]), 2)
+
+
 class EffectiveNewsDaysTests(unittest.TestCase):
     def test_clamped_to_plan_limit(self):
         self.assertEqual(qu.effective_news_days(45, max_days=29), 29)

@@ -13,6 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from ticker_resolver_v2 import (  # noqa: E402
+    drop_subsumed_fragments,
+    find_companies_in_text,
     official_name_for_symbol,
     resolve_ticker,
 )
@@ -59,6 +61,42 @@ class OfficialNameTests(unittest.TestCase):
     def test_handles_none_and_empty(self):
         self.assertEqual(official_name_for_symbol(None), "")
         self.assertEqual(official_name_for_symbol(""), "")
+
+
+class FindCompaniesInTextTests(unittest.TestCase):
+    """Regression: prod (no Ollama) extracted 'hdfc bank', 'bank' and 'hdfc'
+    from 'HDFC Bank last 3 days', which the app rendered as a bogus
+    three-company comparison (Au Small Finance Bank, HDFC AMC)."""
+
+    def test_hdfc_bank_query_yields_one_company(self):
+        found = find_companies_in_text("HDFC Bank last 3 days")
+        self.assertEqual(found, ["hdfc bank"])
+
+    def test_generic_first_word_alone_is_not_a_mention(self):
+        self.assertEqual(find_companies_in_text("which bank is doing well"), [])
+
+    def test_real_bank_name_still_found(self):
+        self.assertIn("bank of baroda", find_companies_in_text("how is bank of baroda doing"))
+
+    def test_distinct_companies_are_all_kept(self):
+        found = find_companies_in_text("compare hdfc bank and hdfc life")
+        self.assertIn("hdfc bank", found)
+        self.assertIn("hdfc life", found)
+
+
+class DropSubsumedFragmentsTests(unittest.TestCase):
+    def test_shorter_contained_fragments_dropped(self):
+        self.assertEqual(
+            drop_subsumed_fragments(["hdfc bank", "bank", "hdfc"]),
+            ["hdfc bank"],
+        )
+
+    def test_distinct_names_share_nothing(self):
+        frags = ["hdfc bank", "hdfc life"]
+        self.assertEqual(drop_subsumed_fragments(frags), frags)
+
+    def test_empty_and_duplicate_handling(self):
+        self.assertEqual(drop_subsumed_fragments(["tcs", "", "tcs"]), ["tcs"])
 
 
 if __name__ == "__main__":

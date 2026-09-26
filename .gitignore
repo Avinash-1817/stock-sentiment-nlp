@@ -220,6 +220,11 @@ data/raw/
 # Sieve scrape runtime artifacts (run records + downloaded files)
 data/sieve_scrapes.json
 data/sieve_downloads/
+# Tracked exceptions to the *.csv rule: prod needs these at runtime -
+# the 46-ticker correlation study and the per-ticker judge track record
+# (the judge falls back to a 10-ticker subset when they're missing).
+!data/per_ticker_correlation_results_v2.csv
+!data/per_ticker_track_record.csv
 *.csv
 models/*.bin
 models/*.pt

@@ -127,6 +127,50 @@ def search_companies(query, max_results=5):
 
 import re
 
+# Words that START many official company names but are ordinary nouns in
+# questions ("hdfc bank last 3 days", "which bank is doing well"). A bare
+# first-word match on one of these is not a company mention unless the
+# company's next name word is also right there in the query ("bank of
+# baroda"). Without this, step 2 below treats every generic noun as a
+# company and the app analyses unrelated firms (observed in prod:
+# 'HDFC Bank last 3 days' -> HDFC Bank + Au Small Finance Bank + HDFC AMC).
+_GENERIC_FIRST_WORDS = frozenset({
+    "bank", "banks", "banking", "finance", "financial", "capital",
+    "industries", "industry", "motors", "power", "steel", "energy",
+    "petro", "petroleum", "oil", "gas", "pharma", "pharmaceuticals",
+    "life", "insurance", "asset", "assets", "realty", "infra",
+    "infrastructure", "technologies", "technology", "tech", "systems",
+    "solutions", "services", "global", "india", "indian",
+    "international", "holdings", "holding", "company", "corporation",
+    "limited", "mart", "media", "retail", "health", "healthcare",
+    "hospital", "sugar", "cement", "paper", "textiles", "trade",
+    "invest", "investments", "consumer", "foods", "hotels", "travel",
+    "logistics",
+})
+
+
+def drop_subsumed_fragments(fragments):
+    """Drop fragments already covered by a LONGER found fragment.
+
+    'hdfc' and 'bank' say nothing that 'hdfc bank' doesn't already - but
+    each resolves to its own unrelated company (HDFC AMC / Au Small Finance
+    Bank), so leaving them in turns one-company questions into bogus
+    comparisons. Word-boundary containment only, so 'hdfc bank' and
+    'hdfc life' never drop each other.
+    """
+    frags = [str(f).strip() for f in fragments if str(f).strip()]
+    kept = []
+    for frag in frags:
+        covered = any(
+            frag != other and re.search(rf"\b{re.escape(frag)}\b", other)
+            for other in frags
+        )
+        if covered or frag in kept:
+            continue
+        kept.append(frag)
+    return kept
+
+
 def find_companies_in_text(query, cutoff=0.75):
     """Scan a full SENTENCE for company mentions embedded within it - e.g.
     'search for paytm' -> ['paytm']. Do NOT pass a whole sentence to
@@ -142,14 +186,35 @@ def find_companies_in_text(query, cutoff=0.75):
         if re.search(rf"\b{re.escape(alias)}\b", query_lower):
             found.append(alias)
 
-    # 2. first word of official NSE company names, as whole-word matches
-    #    (only for names >=4 chars, to avoid noisy one/two-letter matches)
+    # 2. longest leading run of each official NSE company name present in
+    #    the query. 'bank of baroda' matches its full leading trigram, while
+    #    the bare 'bank' in 'which bank is doing well' matches nothing
+    #    longer than itself - and a lone generic noun ('bank', 'power', ...)
+    #    starts hundreds of official names, so it never counts as a mention
+    #    on its own. Without the n-gram walk, 'HDFC Bank last 3 days' also
+    #    matched every name that merely STARTS with a word in the query
+    #    (observed in prod: + Au Small Finance Bank + HDFC AMC).
     if _NAME_TO_SYMBOL:
+        seen = set(found)
         for official_name in _ALL_NAMES:
-            first_word = official_name.split()[0] if official_name.split() else ""
-            if len(first_word) >= 4 and re.search(rf"\b{re.escape(first_word)}\b", query_lower):
-                if first_word not in found:
-                    found.append(first_word)
+            words = official_name.split()
+            if not words:
+                continue
+            fragment = None
+            for n in range(min(len(words), 4), 0, -1):
+                candidate = " ".join(words[:n]).lower()
+                if re.search(rf"\b{re.escape(candidate)}\b", query_lower):
+                    fragment = candidate
+                    break
+            if fragment is None:
+                continue
+            if fragment in _GENERIC_FIRST_WORDS and len(words) > 1:
+                continue
+            if len(fragment.split()) == 1 and len(fragment) < 4:
+                continue  # skip noisy one/two/three-letter first words
+            if fragment not in seen:
+                seen.add(fragment)
+                found.append(fragment)
 
     # 3. only if nothing matched directly, fuzzy-match individual WORDS
     #    (never the whole sentence) as a last resort
@@ -163,7 +228,11 @@ def find_companies_in_text(query, cutoff=0.75):
             if matches and matches[0] not in found:
                 found.append(matches[0])
 
-    return found
+    # A longer fragment subsumes shorter ones it contains: next to
+    # 'hdfc bank', both 'hdfc' and 'bank' are noise that resolve to wrong
+    # companies. Word-boundary containment, so distinct names that merely
+    # share a prefix ('hdfc bank' vs 'hdfc life') are all kept.
+    return drop_subsumed_fragments(found)
 
 
 if __name__ == "__main__":

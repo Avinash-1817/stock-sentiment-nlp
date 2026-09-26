@@ -2,7 +2,7 @@ import difflib
 import re
 import json
 
-from ticker_resolver_v2 import resolve_ticker
+from ticker_resolver_v2 import drop_subsumed_fragments, resolve_ticker
 
 # ---------------------------------------------------------------------------
 # Regex fallback for the day-window (used if Ollama is unavailable/fails,
@@ -98,7 +98,7 @@ def _ground_llm_companies(llm_companies, user_query, find_companies_in_text_fn):
             grounded.append(str(company).strip())
     if not grounded:
         grounded = [c for c in find_companies_in_text_fn(user_query) if _confident_match(c)]
-    return grounded
+    return drop_subsumed_fragments(grounded)
 
 
 # ---------------------------------------------------------------------------
@@ -177,6 +177,21 @@ def understand_query(user_query, find_companies_in_text_fn, default_days=7,
         q = user_query.lower()
         if not re.search(r"\b(hi|hello|hey|thanks|thank you|bye)\b", q):
             companies = [c for c in prev_companies if _confident_match(c)]
+
+    # 'hdfc bank', 'hdfc' and 'bank' all landing in one turn collapses to
+    # one company - they resolve to the same or related NSE entries, and
+    # keeping all three fakes a multi-company comparison. Dedupe happens on
+    # the RESOLVED TICKER so 'hdfc bank' and 'hdfc bank limited' merge too.
+    seen_tickers = set()
+    deduped = []
+    for company in companies:
+        ticker, _ = resolve_ticker(company)
+        if ticker and ticker in seen_tickers:
+            continue
+        if ticker:
+            seen_tickers.add(ticker)
+        deduped.append(company)
+    companies = deduped
 
     if llm_result is not None and llm_result.get("days_back") is not None:
         try:
