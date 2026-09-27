@@ -84,6 +84,29 @@ class FindCompaniesInTextTests(unittest.TestCase):
         self.assertIn("hdfc life", found)
 
 
+class SymbolResolutionTests(unittest.TestCase):
+    """Users type NSE SYMBOLS for newer listings ('groww stock' ->
+    Billionbrains Garage Ventures Limited). Symbols are matched exactly and
+    case-insensitively."""
+
+    def test_groww_resolves_by_symbol(self):
+        ticker, matched = resolve_ticker("groww")
+        self.assertEqual(ticker, "GROWW.NS")
+        self.assertEqual(matched, "groww")
+
+    def test_symbol_match_is_case_insensitive(self):
+        self.assertEqual(resolve_ticker("GROWW")[0], "GROWW.NS")
+
+    def test_paytm_symbol_preferred_over_fuzzy(self):
+        # PAYTM is both a symbol and close to company-name tokens; the exact
+        # symbol hit must win.
+        self.assertEqual(resolve_ticker("paytm")[0], "PAYTM.NS")
+
+    def test_symbol_lookup_uses_its_own_table(self):
+        from ticker_resolver_v2 import _SYMBOLS
+        self.assertIn("groww", _SYMBOLS)
+
+
 class DropSubsumedFragmentsTests(unittest.TestCase):
     def test_shorter_contained_fragments_dropped(self):
         self.assertEqual(

@@ -170,6 +170,45 @@ class NoOllamaProdPathTests(unittest.TestCase):
         self.assertEqual(len(out["companies"]), 2)
 
 
+class CarryoverGuardTests(unittest.TestCase):
+    """Garbage/unresolvable input must NOT inherit the previous turn's
+    company: 'groww stock' after a varun query answered Varun Beverages."""
+
+    def test_garbage_input_does_not_carry_over(self):
+        with _fake_llm(None):
+            out = qu.understand_query(
+                "asdkfjapple", find_companies_in_text, prev_companies=["varun"]
+            )
+        self.assertEqual(out["companies"], [])
+
+    def test_unknown_ticker_named_in_query_never_answers_varun(self):
+        # 'groww stock' used to inherit varun from the previous turn. Now it
+        # resolves to GROWW itself; either way it must NOT answer with the
+        # previous turn's company.
+        with _fake_llm(None):
+            out = qu.understand_query(
+                "groww stock", find_companies_in_text, prev_companies=["varun"]
+            )
+        self.assertNotIn("varun", out["companies"])
+        self.assertNotEqual(out["companies"], ["varun"])
+
+    def test_true_followup_still_carries_over(self):
+        with _fake_llm(None):
+            out = qu.understand_query(
+                "show me trends for last 15 days", find_companies_in_text,
+                prev_companies=["varun"],
+            )
+        self.assertEqual(out["companies"], ["varun"])
+
+    def test_followup_with_new_window_still_carries_over(self):
+        with _fake_llm(None):
+            out = qu.understand_query(
+                "now show me the last 30 days", find_companies_in_text,
+                prev_companies=["varun"],
+            )
+        self.assertEqual(out["companies"], ["varun"])
+
+
 class EffectiveNewsDaysTests(unittest.TestCase):
     def test_clamped_to_plan_limit(self):
         self.assertEqual(qu.effective_news_days(45, max_days=29), 29)

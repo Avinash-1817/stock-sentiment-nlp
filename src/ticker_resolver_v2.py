@@ -45,10 +45,21 @@ try:
         _NSE_DF["SYMBOL"].str.strip()
     ))
     _ALL_NAMES = list(_NAME_TO_SYMBOL.keys())
+    # Users say the TICKER for newer listings whose official name nobody
+    # uses ('groww stock' -> Billionbrains Garage Ventures Limited). Symbols
+    # are unique and exact, so a dedicated symbol table is unambiguous
+    # (unlike substring name matching, which would collide: 'tcs' in
+    # 'Tata Consultancy Services').
+    _SYMBOLS = {
+        str(s).strip().lower(): str(s).strip().upper()
+        for s in _NSE_DF["SYMBOL"].dropna().astype(str).str.strip()
+        if s
+    }
 except FileNotFoundError:
     _NSE_DF = None
     _NAME_TO_SYMBOL = {}
     _ALL_NAMES = []
+    _SYMBOLS = {}
 
 
 def _fuzzy_sane(name, official_name):
@@ -81,11 +92,17 @@ def resolve_ticker(company_name, cutoff=0.55):
     if not _NAME_TO_SYMBOL:
         return None, None  # NSE list not loaded
 
-    # 2. Exact match against official company name
+    # 2. Exact NSE SYMBOL match (case-insensitive): 'groww' -> GROWW.NS,
+    #    'paytm' -> PAYTM.NS. Users often type the symbol rather than the
+    #    official company name, especially for recent listings.
+    if name in _SYMBOLS:
+        return f"{_SYMBOLS[name]}.NS", name
+
+    # 3. Exact match against official company name
     if name in _NAME_TO_SYMBOL:
         return f"{_NAME_TO_SYMBOL[name]}.NS", name
 
-    # 3. Substring match - handles "reliance" matching
+    # 4. Substring match - handles "reliance" matching
     #    "RELIANCE INDUSTRIES LIMITED"
     for official_name, symbol in _NAME_TO_SYMBOL.items():
         # match if the query is a meaningful chunk of the official name
@@ -93,7 +110,7 @@ def resolve_ticker(company_name, cutoff=0.55):
         if name == first_word or (len(name) >= 4 and name in official_name):
             return f"{symbol}.NS", official_name
 
-    # 4. Fuzzy match as last resort (typos, partial names) - but only accept
+    # 5. Fuzzy match as last resort (typos, partial names) - but only accept
     #    matches that are sane (share a real token with the official name)
     matches = difflib.get_close_matches(name, _ALL_NAMES, n=1, cutoff=cutoff)
     if matches and _fuzzy_sane(name, matches[0]):
@@ -185,6 +202,14 @@ def find_companies_in_text(query, cutoff=0.75):
     for alias in CURATED_ALIASES.keys():
         if re.search(rf"\b{re.escape(alias)}\b", query_lower):
             found.append(alias)
+
+    # 1b. exact NSE symbol words: users type the TICKER for newer listings
+    #     whose official name nobody uses ('groww stock', 'paytm stock').
+    #     Exact whole-word match against the symbol table keeps this precise.
+    if _SYMBOLS:
+        for word in re.split(r"[,\?\s]+", query_lower):
+            if word and word in _SYMBOLS and word not in found:
+                found.append(word)
 
     # 2. longest leading run of each official NSE company name present in
     #    the query. 'bank of baroda' matches its full leading trigram, while

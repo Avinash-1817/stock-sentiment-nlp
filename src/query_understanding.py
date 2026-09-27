@@ -173,9 +173,33 @@ def understand_query(user_query, find_companies_in_text_fn, default_days=7,
     # from an older session (or pre-fix garbage like 'show me trends') can
     # never resurrect an unrelated company. A bare greeting or thanks means
     # a new topic, not a follow-up.
+    #
+    # Guard against garbage input hijacking the previous company: if the
+    # query contains an unknown CONTENT word (a noun-like token that is not
+    # a stopword), the user named something we failed to resolve - 'groww
+    # stock', 'asdkfjapple'. Carrying over varun from the previous turn
+    # would then answer a question that was never asked. True follow-ups
+    # ('show me trends for last 15 days') contain no such token.
+    def _names_something_new(text):
+        stop = {
+            "a", "an", "and", "any", "are", "as", "at", "be", "been", "by", "did",
+            "do", "does", "done", "for", "from", "give", "had", "has", "have",
+            "how", "i", "in", "is", "it", "its", "last", "latest", "me",
+            "month", "months", "now", "of", "on", "over", "past", "price",
+            "previous", "recent", "same", "show", "since", "still", "stock",
+            "stocks", "tell", "than", "the", "their", "then", "this", "trend",
+            "trends", "update", "view", "was", "were", "what", "whats", "why",
+            "will", "with", "would", "week", "weeks", "year", "years", "day",
+            "days", "about", "again", "also", "earlier", "performance", "news",
+        }
+        for token in re.findall(r"[a-z][a-z&.\-]{2,}", text.lower()):
+            if token not in stop and not token.isdigit():
+                return True
+        return False
+
     if not companies and prev_companies:
         q = user_query.lower()
-        if not re.search(r"\b(hi|hello|hey|thanks|thank you|bye)\b", q):
+        if not re.search(r"\b(hi|hello|hey|thanks|thank you|bye)\b", q) and not _names_something_new(q):
             companies = [c for c in prev_companies if _confident_match(c)]
 
     # 'hdfc bank', 'hdfc' and 'bank' all landing in one turn collapses to
