@@ -50,6 +50,11 @@ NEWSAPI_KEY = env("NEWSAPI_KEY")
 # to this (price history from yfinance is NOT affected).
 NEWSAPI_MAX_DAYS = int(env("NEWSAPI_MAX_DAYS", "29"))
 OLLAMA_MODEL = env("OLLAMA_MODEL", "llama3.2")
+# Narratives: set OLLAMA_NARRATIVES=1 to have the chat app write its
+# summaries with Ollama when it's available. Default is off so local and
+# deployed apps produce IDENTICAL, deterministic summaries from
+# narratives.py (Ollama is still used for query understanding either way).
+USE_OLLAMA_NARRATIVES = env("OLLAMA_NARRATIVES", "0") == "1"
 
 # Sieve scrape API (https://scrape.usesieve.com). SIEVE_API_KEY is a
 # server-side-only secret with full account access (no scopes): never send it

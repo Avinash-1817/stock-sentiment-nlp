@@ -167,18 +167,22 @@ TRACK_RECORD = load_track_record()
 def generate_narrative(d, model_name=OLLAMA_MODEL):
     """Turn a company's raw metrics into a plain-English, market-commentary
     style explanation - no jargon like 'Pearson r' or 'sentiment score'.
-    Tries Ollama first; falls back to a template-based version if Ollama
-    isn't available (e.g. when deployed on Streamlit Community Cloud, which
-    can't run a background LLM service)."""
+
+    Default is the deterministic template (identical output on local and
+    deployed apps). Set OLLAMA_NARRATIVES=1 to write with Ollama when it's
+    reachable, falling back to the same template when it isn't."""
     if d.get("error"):
         return None
+
+    if not config.USE_OLLAMA_NARRATIVES:
+        return generate_narrative_fallback(d)
 
     hist_line = (
         f"Historically (2017-2020 study), this stock's price has tended to move in the "
         f"same direction as news sentiment on the same day "
         f"({'a pattern strong enough to be statistically meaningful' if d['hist_sig'] else 'though this pattern was weak and not statistically reliable'})."
         if d["hist_r"] is not None else
-        "This stock wasn't part of the original historical study (it's a newer listing), so there's no historical pattern to reference."
+        "This stock wasn't part of the original historical study, so there's no historical pattern to reference."
     )
 
     window_change = d.get("pct_change_window")
@@ -219,8 +223,11 @@ Write the summary:"""
 
 def generate_comparison_narrative(companies_data, model_name=OLLAMA_MODEL):
     """Plain-English comparison across 2+ companies - explains differences,
-    never declares a winner. Tries Ollama first; falls back to a
-    template-based version if Ollama isn't available."""
+    never declares a winner. Deterministic template unless
+    OLLAMA_NARRATIVES=1 (then Ollama, with the template as fallback)."""
+    if not config.USE_OLLAMA_NARRATIVES:
+        return generate_comparison_narrative_fallback(companies_data)
+
     summaries = []
     for d in companies_data:
         days = d.get("days_back", 7)
