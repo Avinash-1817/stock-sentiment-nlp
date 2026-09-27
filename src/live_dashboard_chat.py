@@ -34,6 +34,7 @@ from query_understanding import understand_query, effective_news_days
 # Shared narrative templates (pure functions, no streamlit/ollama) - used
 # directly when Ollama isn't available and by the Ollama fallbacks below.
 from narratives import generate_comparison_narrative_fallback, generate_narrative_fallback
+from display import format_published_at
 
 # Optional Sieve scrape integration. The panel renders nothing unless
 # SIEVE_API_KEY is configured, so the app is unchanged without a key.
@@ -130,7 +131,8 @@ def fetch_recent_news(company_name, days_back=7):
     rows = []
     for a in articles:
         text = (a.get("title") or "") + ". " + (a.get("description") or "")
-        rows.append({"title": a.get("title"), "text": text, "publishedAt": a.get("publishedAt"),
+        rows.append({"title": a.get("title"), "text": text,
+                     "publishedAt": format_published_at(a.get("publishedAt")),
                      "source": a.get("source", {}).get("name")})
     return pd.DataFrame(rows)
 

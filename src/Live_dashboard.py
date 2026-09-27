@@ -10,6 +10,7 @@ Setup (same as live_sentiment_pipeline.py):
 
 import config
 import judge
+from display import format_published_at
 import streamlit as st
 import pandas as pd
 import torch
@@ -110,7 +111,7 @@ def fetch_recent_news(company_name, days_back=7):
         text = (a.get("title") or "") + ". " + (a.get("description") or "")
         rows.append({
             "title": a.get("title"), "text": text,
-            "publishedAt": a.get("publishedAt"),
+            "publishedAt": format_published_at(a.get("publishedAt")),
             "source": a.get("source", {}).get("name"), "url": a.get("url"),
         })
     return pd.DataFrame(rows)
