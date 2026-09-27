@@ -170,6 +170,7 @@ def generate_narrative_fallback(d):
             else "mostly negative" if d['avg_sentiment'] < -0.15
             else "mixed/neutral")
     days = d.get("news_days", d.get("days_back", 7))  # articles were fetched over the NEWS window
+    price_days = d.get("days_back", 7)  # price window the user asked for (can exceed the news clamp)
     window_change = d.get("pct_change_window")
     pct_change = d.get("pct_change")
 
@@ -180,7 +181,11 @@ def generate_narrative_fallback(d):
 
     if window_change is not None:
         direction = "up" if window_change > 0 else "down" if window_change < 0 else "flat"
-        parts.append(f"Over that same {days}-day window, the stock moved {direction} {abs(window_change):.2%}.")
+        # Name the PRICE window explicitly - it is NOT 'that same' news
+        # window: NewsAPI clamps news to ~29 days while prices follow the
+        # requested window (e.g. 90 days). Claiming otherwise misstates
+        # which period the move covers.
+        parts.append(f"Over the last {price_days} trading days, the stock moved {direction} {abs(window_change):.2%}.")
 
     if pct_change is not None:
         direction = "up" if pct_change > 0 else "down" if pct_change < 0 else "flat"
@@ -200,7 +205,7 @@ def generate_narrative_fallback(d):
             )
     else:
         parts.append(
-            "This stock wasn't part of the original historical study (it's a newer listing), "
+            "This stock wasn't part of the original historical study, "
             "so there's no historical pattern to reference."
         )
 
