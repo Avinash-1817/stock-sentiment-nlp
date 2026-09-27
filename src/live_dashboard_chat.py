@@ -40,7 +40,7 @@ from display import format_published_at
 # SIEVE_API_KEY is configured, so the app is unchanged without a key.
 from sieve_panel import render_sieve_panel
 
-st.set_page_config(page_title="Stock Sentiment Chat", layout="wide")
+st.set_page_config(page_title="Stock Sentiment Chat", page_icon="📈", layout="wide")
 _session = cfrequests.Session(impersonate="chrome")
 
 # The NewsAPI key lives in the project .env file (copy .env.example, fill in
@@ -439,7 +439,9 @@ def render_company_detail(d, key_suffix=""):
         return
 
     ticker = d["ticker"]
-    st.markdown(f"### {d['company'].title()} ({ticker})")
+    # official_name_for_symbol is already properly cased ("HDFC Bank Limited");
+    # .title()-ing it produced "Hdfc Bank Limited" in the card header.
+    st.markdown(f"### {d['company']} ({ticker})")
 
     # The tool's judgment (same-day alignment reading, not a forecast)
     render_verdict(d.get("verdict"), d["company"], key_suffix=key_suffix)
@@ -449,13 +451,34 @@ def render_company_detail(d, key_suffix=""):
         narrative = generate_narrative(d)
     st.write(narrative)
 
+    # Key numbers visible WITHOUT opening an expander - these are the four
+    # things every visitor looks for first.
+    days = d.get("days_back", 7)
+    news_days = d.get("news_days", days)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Articles analyzed", d["article_count"], f"{news_days}d news window")
+    m2.metric("News tone score", f"{d['avg_sentiment']:+.3f}",
+              "positive +" if d["avg_sentiment"] > 0.15 else "negative −" if d["avg_sentiment"] < -0.15 else "neutral band")
+    if d["latest_close"]:
+        window_chg = d.get("pct_change_window")
+        m3.metric("Latest close", f"₹{d['latest_close']:,.2f}",
+                  f"{window_chg:+.2%} over last {days}d" if window_chg is not None else None)
+    else:
+        m3.metric("Latest close", "Not available")
+    if d["pct_change"] is not None:
+        m4.metric("Most recent day's move", f"{d['pct_change']:+.2%}")
+    else:
+        m4.metric("Most recent day's move", "Not available")
+
     c1, c2 = st.columns(2)
     with c1:
         counts = d["news_df"]["sentiment"].value_counts()
         fig = go.Figure(data=[go.Pie(labels=counts.index, values=counts.values,
                         marker=dict(colors=["#2ca02c" if l == "Positive" else "#d62728" if l == "Negative" else "#7f7f7f"
                                             for l in counts.index]))])
-        fig.update_layout(height=280, margin=dict(t=20, b=20), title="Recent news tone")
+        fig.update_traces(hole=0.45)  # donut reads lighter than a solid pie
+        fig.update_layout(height=280, margin=dict(t=20, b=20), title="Recent news tone",
+                          legend=dict(orientation="h", y=-0.05))
         st.plotly_chart(fig, use_container_width=True, key=f"pie_{ticker}_{key_suffix}")
     with c2:
         price_df = d["price_df"]
@@ -463,27 +486,24 @@ def render_company_detail(d, key_suffix=""):
             price_df = price_df.copy()
             price_df["Date"] = pd.to_datetime(price_df["Date"])
             fig2 = go.Figure()
-            fig2.add_trace(go.Scatter(x=price_df["Date"], y=price_df["Close"], mode='lines'))
-            fig2.update_layout(height=280, margin=dict(t=40, b=20),
-                               title=f"{ticker} price, last {d.get('days_back', 30)} days")
+            fig2.add_trace(go.Scatter(
+                x=price_df["Date"], y=price_df["Close"], mode="lines",
+                line=dict(color="#1f77b4", width=2),
+                fill="tozeroy", fillcolor="rgba(31,119,180,0.08)",
+                hovertemplate="%{x|%d %b %Y}<br>₹%{y:,.2f}<extra></extra>",
+            ))
+            fig2.update_layout(height=280, margin=dict(t=40, b=20), hovermode="x unified",
+                               title=f"{ticker} price, last {days} trading days")
+            # Keep the area fill but clip the axis near the data: an absolute
+            # zero baseline made a ~₹200 stock look flat at the top of a
+            # 0-200 axis.
+            closes = pd.to_numeric(price_df["Close"], errors="coerce").dropna()
+            if not closes.empty:
+                pad = max((closes.max() - closes.min()) * 0.15, closes.max() * 0.02)
+                fig2.update_yaxes(range=[closes.min() - pad, closes.max() + pad])
             st.plotly_chart(fig2, use_container_width=True, key=f"price_{ticker}_{key_suffix}")
 
-    with st.expander("See the numbers behind this summary"):
-        days = d.get("days_back", 7)
-        news_days = d.get("news_days", days)
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Articles analyzed", f"{d['article_count']} ({news_days}d window)")
-        m2.metric("News tone score", f"{d['avg_sentiment']:+.3f}")
-        if d["latest_close"]:
-            window_chg = d.get("pct_change_window")
-            m3.metric("Latest close", f"₹{d['latest_close']:,.2f}",
-                      f"{window_chg:+.2%} over last {days}d" if window_chg is not None else None)
-        else:
-            m3.metric("Latest close", "Not available")
-        if d["pct_change"] is not None:
-            m4.metric("Most recent day's move", f"{d['pct_change']:+.2%}")
-        else:
-            m4.metric("Most recent day's move", "Not available")
+    with st.expander(f"All {d['article_count']} articles analyzed (newest first)"):
         st.dataframe(d["news_df"][["publishedAt", "source", "title", "sentiment"]],
                      use_container_width=True, key=f"table_{ticker}_{key_suffix}")
 
@@ -505,9 +525,36 @@ st.info(
 if "chat_log" not in st.session_state:
     st.session_state.chat_log = []  # list of {"query": str, "results": [dict, ...]}
 
-debug_mode = st.checkbox("Show debug info (temporary, for troubleshooting)", value=False)
+# Settings live in the sidebar so the chat column stays clean.
+with st.sidebar:
+    st.subheader("Settings")
+    debug_mode = st.checkbox("Show debug info", value=False)
+    if st.session_state.chat_log and st.button("🗑️ Clear chat history"):
+        st.session_state.chat_log = []
+        st.rerun()
 
-user_query = st.chat_input("e.g. show me trends for reliance and paytm")
+# One-click example queries for first-time users; clicking one runs it as if
+# it had been typed into the chat box.
+#
+# IMPORTANT: st.chat_input must be called on EVERY run, unconditionally -
+# Streamlit drops a widget from the page (and loses its return value) on any
+# run where the call is skipped. `user_query = user_query or st.chat_input(...)`
+# made the input box vanish the moment a chip was clicked.
+chat_input_value = st.chat_input("e.g. show me trends for reliance and paytm")
+
+user_query = chat_input_value
+if not st.session_state.chat_log:
+    st.caption("Try one of these to see what the tool can do:")
+    examples = [
+        "TCS last 45 days",
+        "compare paytm and reliance",
+        "why is HDFC Bank in the news",
+        "groww stock",
+    ]
+    chip_cols = st.columns(len(examples))
+    for col, example in zip(chip_cols, examples):
+        if col.button(example, key=f"ex_{example}", use_container_width=True):
+            user_query = example
 
 # if user_query:
 #     with st.spinner("Understanding your question..."):
@@ -543,14 +590,18 @@ if user_query:
                 results.append(analyze_company(company, days_back=days_back))
 
     st.session_state.chat_log.append({"query": user_query, "companies": companies, "results": results})
-    
+
 # --- Render the FULL session history, oldest to newest ---
 for turn_idx, turn in enumerate(st.session_state.chat_log):
     st.chat_message("user").write(turn["query"])
     with st.chat_message("assistant"):
         if not turn["companies"]:
-            st.write("I couldn't identify any specific companies in your question. "
-                     "Try naming a company directly, e.g. 'Reliance' or 'Paytm'.")
+            st.warning("I couldn't identify a company I know from that question.")
+            st.write(
+                "Try a company name on its own (e.g. `Reliance`, `Paytm`, `groww`) "
+                "or with a window: `TCS last 45 days`. If it's a newer listing, "
+                "typing the ticker symbol (like `groww`) works too."
+            )
         else:
             # Resolve each extracted fragment to its official NSE name so the
             # history line matches what the detail cards show (e.g. a query for
@@ -559,7 +610,7 @@ for turn_idx, turn in enumerate(st.session_state.chat_log):
                 official_name_for_symbol(resolve_ticker(c)[0] or "") or c.title()
                 for c in turn["companies"]
             ]
-            st.write(f"Analyzing: {', '.join(resolved_labels)}")
+            st.caption(f"🔍 Analyzing: {', '.join(resolved_labels)}")
 
             valid_results = [r for r in turn["results"] if not r.get("error")]
 
@@ -571,11 +622,6 @@ for turn_idx, turn in enumerate(st.session_state.chat_log):
             for i, d in enumerate(turn["results"]):
                 render_company_detail(d, key_suffix=f"{turn_idx}_{i}")
                 st.divider()
-
-if st.session_state.chat_log:
-    if st.button("Clear chat history"):
-        st.session_state.chat_log = []
-        st.rerun()
 
 # Draw the optional Sieve scrape panel (no-op when Sieve isn't configured).
 render_sieve_panel()
