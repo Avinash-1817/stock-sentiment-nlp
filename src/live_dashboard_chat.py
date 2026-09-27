@@ -31,6 +31,10 @@ from ticker_resolver_v2 import resolve_ticker, find_companies_in_text, official_
 
 from query_understanding import understand_query, effective_news_days
 
+# Shared narrative templates (pure functions, no streamlit/ollama) - used
+# directly when Ollama isn't available and by the Ollama fallbacks below.
+from narratives import generate_comparison_narrative_fallback, generate_narrative_fallback
+
 # Optional Sieve scrape integration. The panel renders nothing unless
 # SIEVE_API_KEY is configured, so the app is unchanged without a key.
 from sieve_panel import render_sieve_panel
@@ -160,59 +164,6 @@ def load_track_record():
 TRACK_RECORD = load_track_record()
 
 
-def generate_narrative_fallback(d):
-    """Template-based narrative, no LLM needed - used when Ollama isn't
-    available (e.g. on Streamlit Community Cloud, which can't run background
-    services like Ollama). Same rules as the Ollama version: no buy/sell
-    language, no predictions, clear about which time period each number
-    refers to."""
-    tone = ("mostly positive" if d['avg_sentiment'] > 0.15
-            else "mostly negative" if d['avg_sentiment'] < -0.15
-            else "mixed/neutral")
-    days = d.get("news_days", d.get("days_back", 7))  # articles were fetched over the NEWS window
-    price_days = d.get("days_back", 7)  # price window the user asked for (can exceed the news clamp)
-    window_change = d.get("pct_change_window")
-    pct_change = d.get("pct_change")
-
-    parts = [
-        f"{d['article_count']} news articles about {d['company'].title()} were found in the last {days} days, "
-        f"with a tone that's been {tone}."
-    ]
-
-    if window_change is not None:
-        direction = "up" if window_change > 0 else "down" if window_change < 0 else "flat"
-        # Name the PRICE window explicitly - it is NOT 'that same' news
-        # window: NewsAPI clamps news to ~29 days while prices follow the
-        # requested window (e.g. 90 days). Claiming otherwise misstates
-        # which period the move covers.
-        parts.append(f"Over the last {price_days} trading days, the stock moved {direction} {abs(window_change):.2%}.")
-
-    if pct_change is not None:
-        direction = "up" if pct_change > 0 else "down" if pct_change < 0 else "flat"
-        parts.append(f"On the most recent trading day alone, it moved {direction} {abs(pct_change):.2%}.")
-
-    if d["hist_r"] is not None:
-        if d["hist_sig"]:
-            parts.append(
-                "Historically (2017-2020 study), this stock's price tended to move in the same "
-                "direction as news sentiment on the same day - a pattern strong enough to be "
-                "statistically meaningful."
-            )
-        else:
-            parts.append(
-                "Historically (2017-2020 study), this pattern was weak for this stock and not "
-                "statistically reliable."
-            )
-    else:
-        parts.append(
-            "This stock wasn't part of the original historical study, "
-            "so there's no historical pattern to reference."
-        )
-
-    parts.append("This is current information only, not a forecast.")
-    return " ".join(parts)
-
-
 def generate_narrative(d, model_name=OLLAMA_MODEL):
     """Turn a company's raw metrics into a plain-English, market-commentary
     style explanation - no jargon like 'Pearson r' or 'sentiment score'.
@@ -264,17 +215,6 @@ Write the summary:"""
         # Ollama not installed/running (e.g. on Streamlit Cloud) - degrade
         # gracefully instead of crashing the whole app.
         return generate_narrative_fallback(d)
-
-
-def generate_comparison_narrative_fallback(companies_data):
-    """Template-based comparison, no LLM needed - same fallback pattern as
-    generate_narrative_fallback above."""
-    lines = []
-    for d in companies_data:
-        tone = "positive" if d['avg_sentiment'] > 0.15 else "negative" if d['avg_sentiment'] < -0.15 else "mixed"
-        lines.append(f"{d['company'].title()}: news tone {tone}, historical sentiment-price link "
-                      f"{'meaningful' if d['hist_sig'] else 'weak or none' if d['hist_r'] is not None else 'not studied'}.")
-    return " ".join(lines) + " This is descriptive only — it does not indicate which stock is a better investment."
 
 
 def generate_comparison_narrative(companies_data, model_name=OLLAMA_MODEL):
